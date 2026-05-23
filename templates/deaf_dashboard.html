@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SignBridge — Deaf User Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
+  <style>
+    .video-wrapper {
+      position: relative;
+      width: 100%;
+      background: #0f172a;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 2px solid #e2e8f0;
+      line-height: 0;
+    }
+    #webcam {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      display: none;
+    }
+    #overlayCanvas {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    .video-placeholder {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 10px; background: #0f172a; z-index: 5;
+    }
+    .buffer-bar-wrap {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      height: 5px; background: rgba(255,255,255,.2); z-index: 6;
+    }
+    .buffer-bar {
+      height: 100%;
+      background: linear-gradient(90deg,#7C3AED,#2563EB);
+      width: 0%; transition: width .1s linear;
+    }
+    .live-badge {
+      position: absolute; top: 10px; left: 10px; z-index: 6;
+      background: rgba(220,38,38,.9); color:#fff;
+      font-size:11px; font-weight:700; padding:4px 10px;
+      border-radius:100px; display:none;
+      align-items:center; gap:5px; letter-spacing:.5px;
+    }
+    .live-dot {
+      width:7px; height:7px; background:#fff;
+      border-radius:50%; animation:blink2 1s step-end infinite;
+    }
+    @keyframes blink2{0%,100%{opacity:1}50%{opacity:0}}
+    .pred-status-row {
+      display:flex; align-items:center; gap:8px;
+      font-size:13px; color:#64748b; min-height:22px;
+    }
+    .pred-dot {
+      width:8px; height:8px; border-radius:50%;
+      background:#cbd5e1; flex-shrink:0; transition:background .3s;
+    }
+    .pred-dot.green  { background:#16a34a; box-shadow:0 0 0 3px rgba(22,163,74,.2); }
+    .pred-dot.orange { background:#ea580c; }
+    .pred-dot.yellow { background:#f59e0b; }
+    #debugLog {
+      font-size:11px; color:#64748b; background:#f8fafc;
+      border:1px solid #e2e8f0; border-radius:8px;
+      padding:8px; max-height:60px; overflow-y:auto;
+      font-family:monospace;
+    }
+  </style>
+</head>
+<body class="dashboard-page">
+
+  <nav class="navbar">
+    <div class="nav-brand">
+      <div class="brand-icon">✋</div>
+      <span class="brand-name">SignBridge</span>
+    </div>
+    <div class="nav-center">
+      <div class="user-pill deaf-pill">🤟 Deaf User Dashboard</div>
+    </div>
+    <a href="/" class="nav-back">← Switch Role</a>
+  </nav>
+
+  <div class="dashboard-grid">
+    <section class="panel panel-left">
+      <div class="panel-header">
+        <div class="panel-icon purple-icon">🤟</div>
+        <div>
+          <h2 class="panel-title">Sign Communication</h2>
+          <p class="panel-sub">Position your hands in front of the webcam</p>
+        </div>
+      </div>
+
+      <div class="camera-controls">
+        <button id="startCamBtn" class="btn btn-orange btn-icon" onclick="startCamera()">
+          <span>▶</span> Start Camera
+        </button>
+        <button id="stopCamBtn" class="btn btn-outline-red btn-icon" onclick="stopCamera()" disabled>
+          <span>⏹</span> Stop Camera
+        </button>
+      </div>
+
+      <div class="video-wrapper" id="videoWrapper">
+        <div class="video-placeholder" id="placeholder">
+          <div style="font-size:40px">📷</div>
+          <p style="color:#94a3b8;font-size:14px;font-weight:500">Camera not started</p>
+          <p style="color:#64748b;font-size:12px">Click Start Camera</p>
+        </div>
+        <div class="live-badge" id="liveBadge">
+          <span class="live-dot"></span> LIVE
+        </div>
+        <video id="webcam" autoplay muted playsinline></video>
+        <canvas id="overlayCanvas"></canvas>
+        <div class="buffer-bar-wrap" id="bufferWrap" style="display:none">
+          <div class="buffer-bar" id="bufferBar"></div>
+        </div>
+      </div>
+
+      <!-- debug log -->
+      <div id="debugLog">Waiting…</div>
+
+      <div class="pred-status-row">
+        <div class="pred-dot" id="predDot"></div>
+        <span id="predStatus">Waiting for camera…</span>
+      </div>
+
+      <div class="prediction-card">
+        <div class="pred-left">
+          <div class="pred-label-sm">Detected Sign</div>
+          <div class="pred-label" id="predLabel">—</div>
+        </div>
+        <div class="pred-right">
+          <div class="pred-conf-sm">Confidence</div>
+          <div class="pred-conf" id="predConf">—</div>
+          <div class="conf-bar-wrap">
+            <div class="conf-bar" id="confBar" style="width:0%"></div>
+          </div>
+        </div>
+        <button class="btn btn-green btn-sm send-pred-btn" id="sendPredBtn"
+                onclick="sendPrediction()" disabled>Send ✉</button>
+      </div>
+
+      <div class="manual-section">
+        <div class="section-divider"><span>or type manually</span></div>
+        <div class="input-row">
+          <input type="text" id="manualInput" class="text-input"
+                 placeholder="Type a message…"
+                 onkeydown="if(event.key==='Enter')sendManual()"/>
+          <button class="btn btn-green" onclick="sendManual()">Send</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel panel-right">
+      <div class="panel-header">
+        <div class="panel-icon blue-icon">💬</div>
+        <div>
+          <h2 class="panel-title">Live Chat</h2>
+          <p class="panel-sub">Shared conversation room</p>
+        </div>
+        <div class="online-dot-wrap">
+          <span class="online-dot"></span>
+          <span class="online-label" id="onlineLabel">Connecting…</span>
+        </div>
+      </div>
+      <div class="chat-window" id="chatWindow">
+        <div class="chat-empty" id="chatEmpty">
+          <div class="chat-empty-icon">💬</div>
+          <p>No messages yet</p>
+          <p class="chat-empty-hint">Start signing or type to begin</p>
+        </div>
+      </div>
+      <div class="chat-status-bar">
+        <span id="statusBar" class="status-text">Ready</span>
+        <span class="status-time" id="lastTime"></span>
+      </div>
+    </section>
+  </div>
+
+  <!--
+    Use tasks/vision from @mediapipe/tasks-vision — most stable CDN
+    Falls back to legacy holistic if needed
+  -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1620248257/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1635989137/holistic.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="{{ url_for('static', filename='chat.js') }}"></script>
+
+  <script>
+  (() => {
+    'use strict';
+
+    const UPPER_POSE = [11,12,13,14,15,16];
+    const SEQ_LEN    = 30;
+    const PRED_EVERY = 5;
+    const CONF_THR   = 50;
+    const DEBOUNCE   = 1000;
+    const ROLE       = 'deaf';
+    const SENDER     = 'Deaf User';
+
+    const video      = document.getElementById('webcam');
+    const canvas     = document.getElementById('overlayCanvas');
+    const ctx        = canvas.getContext('2d');
+    const placeholder= document.getElementById('placeholder');
+    const liveBadge  = document.getElementById('liveBadge');
+    const bufferWrap = document.getElementById('bufferWrap');
+    const bufferBar  = document.getElementById('bufferBar');
+    const predDot    = document.getElementById('predDot');
+    const predStatus = document.getElementById('predStatus');
+    const debugLog   = document.getElementById('debugLog');
+
+    function log(msg) {
+      debugLog.textContent = msg;
+      console.log('[SignBridge]', msg);
+    }
+
+    // ── Socket ────────────────────────────────────────────
+    const socket = io();
+    socket.on('connect', () => {
+      socket.emit('join', {role: SENDER});
+      document.getElementById('onlineLabel').textContent = 'Connected';
+    });
+    socket.on('disconnect', () => {
+      document.getElementById('onlineLabel').textContent = 'Disconnected';
+    });
+    socket.on('receive_message', msg => appendMessage(msg, ROLE));
+    socket.on('system_message',  msg => appendSystemMessage(msg.text));
+
+    // ── State ─────────────────────────────────────────────
+    let active       = false;
+    let frameN       = 0;
+    let predicting   = false;
+    let lastLabel    = '';
+    let lastPredTime = 0;
+    const buf        = [];
+    let lastResults  = null;
+    let rafId        = null;
+
+    // ── normalize_points matches Python exactly ───────────
+    function normPts(flat) {
+      const n   = flat.length / 3;
+      const pts = Float32Array.from(flat);
+      let allZ  = true;
+      for (let v of pts) { if (v !== 0) { allZ = false; break; } }
+      if (allZ) return pts;
+      let mx = 0, my = 0;
+      for (let i = 0; i < n; i++) { mx += pts[i*3]; my += pts[i*3+1]; }
+      mx /= n; my /= n;
+      for (let i = 0; i < n; i++) { pts[i*3] -= mx; pts[i*3+1] -= my; }
+      let sc = 0;
+      for (let i = 0; i < n; i++) {
+        sc = Math.max(sc, Math.abs(pts[i*3]), Math.abs(pts[i*3+1]));
+      }
+      if (sc === 0) sc = 1;
+      for (let i = 0; i < n; i++) { pts[i*3] /= sc; pts[i*3+1] /= sc; }
+      return pts;
+    }
+
+    // ── extract_keypoints matches Python exactly ──────────
+    function extractKeypoints(r) {
+      const lhRaw = new Float32Array(63);
+      if (r.leftHandLandmarks) {
+        r.leftHandLandmarks.forEach((p,i) => {
+          lhRaw[i*3]=p.x; lhRaw[i*3+1]=p.y; lhRaw[i*3+2]=p.z;
+        });
+      }
+      const rhRaw = new Float32Array(63);
+      if (r.rightHandLandmarks) {
+        r.rightHandLandmarks.forEach((p,i) => {
+          rhRaw[i*3]=p.x; rhRaw[i*3+1]=p.y; rhRaw[i*3+2]=p.z;
+        });
+      }
+      const pRaw = new Float32Array(18);
+      if (r.poseLandmarks) {
+        UPPER_POSE.forEach((idx,i) => {
+          const p = r.poseLandmarks[idx];
+          pRaw[i*3]=p.x; pRaw[i*3+1]=p.y; pRaw[i*3+2]=p.z;
+        });
+      }
+      const feat = new Float32Array(144);
+      feat.set(normPts(lhRaw),   0);
+      feat.set(normPts(rhRaw),  63);
+      feat.set(normPts(pRaw),  126);
+      return feat;
+    }
+
+    // ── Draw landmarks ────────────────────────────────────
+    // video has CSS transform:scaleX(-1)  →  mirrored visually
+    // canvas overlays on top, NO css transform
+    // holistic sees raw unmirrored frame
+    // holistic lm.x=0 → raw-frame left → display right (after mirror)
+    // canvas lm.x=0 → canvas left ← MISMATCH
+    // fix: mirror lm.x → 1-lm.x before drawing on canvas
+    function mirrorLM(lms) {
+      return lms.map(p => ({x: 1-p.x, y: p.y, z: p.z}));
+    }
+
+    function drawHandsOnCanvas(r) {
+      if (!r) return;
+      if (r.leftHandLandmarks && r.leftHandLandmarks.length) {
+        const m = mirrorLM(r.leftHandLandmarks);
+        drawConnectors(ctx, m, HAND_CONNECTIONS,
+          {color:'#00CFFF', lineWidth:3});
+        window.drawLandmarks(ctx, m,
+          {color:'#fff', fillColor:'#7C3AED', lineWidth:1, radius:5});
+      }
+      if (r.rightHandLandmarks && r.rightHandLandmarks.length) {
+        const m = mirrorLM(r.rightHandLandmarks);
+        drawConnectors(ctx, m, HAND_CONNECTIONS,
+          {color:'#00FF88', lineWidth:3});
+        window.drawLandmarks(ctx, m,
+          {color:'#fff', fillColor:'#EA580C', lineWidth:1, radius:5});
+      }
+    }
+
+    // ── Holistic — ONE instance, initialized at page load ─
+    log('Loading MediaPipe Holistic…');
+    const holistic = new Holistic({
+      locateFile: f =>
+        `https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1635989137/${f}`
+    });
+    holistic.setOptions({
+      modelComplexity:        1,
+      smoothLandmarks:        true,
+      enableSegmentation:     false,
+      refineFaceLandmarks:    false,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence:  0.5
+    });
+    holistic.onResults(r => {
+      if (!active) return;
+      lastResults = r;
+
+      // push feature to buffer
+      const feat = extractKeypoints(r);
+      buf.push(Array.from(feat));
+      if (buf.length > SEQ_LEN) buf.shift();
+      bufferBar.style.width = Math.min((buf.length/SEQ_LEN)*100,100)+'%';
+
+      if (buf.length < SEQ_LEN) {
+        setDot('orange', `Building ${buf.length}/${SEQ_LEN}…`);
+      } else if (!predicting && !lastLabel) {
+        setDot('orange','Detecting…');
+      }
+
+      frameN++;
+      if (buf.length===SEQ_LEN && frameN%PRED_EVERY===0 && !predicting) {
+        doPrediction(buf.slice());
+      }
+    });
+
+    holistic.initialize().then(() => {
+      log('MediaPipe ready. Click Start Camera.');
+      setDot('','Ready — click Start Camera');
+    }).catch(e => {
+      log('MediaPipe init error: ' + e);
+    });
+
+    // ── Frame loop ────────────────────────────────────────
+    let lastSendTs = 0;
+    const SEND_MS  = 66; // ~15fps to holistic (stable)
+
+    function frameLoop(ts) {
+      if (!active) return;
+      rafId = requestAnimationFrame(frameLoop);
+
+      if (video.readyState < 2) return;
+
+      const W = canvas.width;
+      const H = canvas.height;
+      if (!W || !H) return;
+
+      // Draw mirrored video on canvas
+      ctx.save();
+      ctx.translate(W, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(video, 0, 0, W, H);
+      ctx.restore();
+
+      // Draw hand landmarks on top
+      drawHandsOnCanvas(lastResults);
+
+      // Send to holistic at throttled rate
+      if (ts - lastSendTs >= SEND_MS) {
+        lastSendTs = ts;
+        holistic.send({image: video}).catch(()=>{});
+      }
+    }
+
+    // ── Camera ────────────────────────────────────────────
+    function startCamera() {
+      log('Requesting camera…');
+      navigator.mediaDevices.getUserMedia({
+        video: {width:{ideal:640}, height:{ideal:480}, facingMode:'user'},
+        audio: false
+      }).then(stream => {
+        video.srcObject = stream;
+        log('Stream obtained, waiting for video…');
+
+        function onReady() {
+          video.removeEventListener('loadeddata', onReady);
+          const W = video.videoWidth  || 640;
+          const H = video.videoHeight || 480;
+          canvas.width  = W;
+          canvas.height = H;
+          log(`Video ready: ${W}x${H}. Starting loop.`);
+
+          active      = true;
+          lastResults = null;
+          buf.length  = 0;
+          frameN      = 0;
+          lastSendTs  = 0;
+          lastLabel   = '';
+
+          placeholder.style.display = 'none';
+          liveBadge.style.display   = 'flex';
+          bufferWrap.style.display  = 'block';
+          document.getElementById('startCamBtn').disabled = true;
+          document.getElementById('stopCamBtn').disabled  = false;
+
+          setDot('orange','Camera on — building buffer…');
+          rafId = requestAnimationFrame(frameLoop);
+        }
+
+        if (video.readyState >= 2) onReady();
+        else video.addEventListener('loadeddata', onReady);
+        video.play().catch(()=>{});
+      }).catch(err => {
+        log('Camera error: ' + err.message);
+        alert('Camera error: ' + err.message);
+      });
+    }
+
+    function stopCamera() {
+      active = false;
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      if (video.srcObject) {
+        video.srcObject.getTracks().forEach(t => t.stop());
+        video.srcObject = null;
+      }
+      lastResults = null;
+      buf.length  = 0;
+      frameN      = 0;
+      lastLabel   = '';
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+
+      placeholder.style.display = 'flex';
+      liveBadge.style.display   = 'none';
+      bufferWrap.style.display  = 'none';
+      bufferBar.style.width     = '0%';
+      document.getElementById('startCamBtn').disabled = false;
+      document.getElementById('stopCamBtn').disabled  = true;
+      document.getElementById('predLabel').textContent = '—';
+      document.getElementById('predConf').textContent  = '—';
+      document.getElementById('confBar').style.width   = '0%';
+      document.getElementById('sendPredBtn').disabled  = true;
+      setDot('','Camera stopped');
+      log('Camera stopped.');
+    }
+
+    // ── Prediction ────────────────────────────────────────
+    function doPrediction(seq) {
+      predicting = true;
+      fetch('/predict', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({sequence: seq})
+      })
+      .then(r => r.json())
+      .then(d => {
+        predicting = false;
+        if (d.error) {
+          log('Predict error: ' + d.error);
+          setDot('yellow','Server error');
+          return;
+        }
+        const conf  = parseFloat(d.confidence);
+        const label = d.label;
+        log(`Pred: ${label} (${conf.toFixed(1)}%)`);
+
+        document.getElementById('predConf').textContent = conf.toFixed(1)+'%';
+        document.getElementById('confBar').style.width  = Math.min(conf,100)+'%';
+
+        if (conf < CONF_THR) {
+          setDot('yellow','Uncertain — keep signing');
+          return;
+        }
+        const now = Date.now();
+        if (label!==lastLabel || now-lastPredTime>DEBOUNCE) {
+          lastLabel    = label;
+          lastPredTime = now;
+          const disp   = label.replace(/_/g,' ');
+          document.getElementById('predLabel').textContent = disp;
+          document.getElementById('sendPredBtn').disabled  = false;
+          setDot('green','Detected: '+disp+' ('+conf.toFixed(1)+'%)');
+          document.getElementById('statusBar').textContent = disp;
+        }
+      })
+      .catch(e => {
+        predicting = false;
+        log('Fetch error: '+e);
+        setDot('yellow','Connection error');
+      });
+    }
+
+    // ── Helpers ───────────────────────────────────────────
+    function setDot(color, text) {
+      predDot.className  = 'pred-dot'+(color?' '+color:'');
+      predStatus.textContent = text;
+    }
+    function sendPrediction() {
+      if (!lastLabel) return;
+      const disp = lastLabel.replace(/_/g,' ');
+      socket.emit('send_message',{text:disp,sender:SENDER,role:ROLE});
+      document.getElementById('sendPredBtn').disabled = true;
+      document.getElementById('statusBar').textContent = 'Sent: '+disp;
+    }
+    function sendManual() {
+      const inp  = document.getElementById('manualInput');
+      const text = inp.value.trim();
+      if (!text) return;
+      socket.emit('send_message',{text,sender:SENDER,role:ROLE});
+      inp.value = '';
+    }
+
+    window.startCamera    = startCamera;
+    window.stopCamera     = stopCamera;
+    window.sendPrediction = sendPrediction;
+    window.sendManual     = sendManual;
+  })();
+  </script>
+</body>
+</html>

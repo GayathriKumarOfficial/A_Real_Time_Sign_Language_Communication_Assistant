@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SignBridge — Hearing User Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
+</head>
+<body class="dashboard-page">
+
+  <nav class="navbar">
+    <div class="nav-brand">
+      <div class="brand-icon">✋</div>
+      <span class="brand-name">SignBridge</span>
+    </div>
+    <div class="nav-center">
+      <div class="user-pill hearing-pill">🎙️ Hearing User Dashboard</div>
+    </div>
+    <a href="/" class="nav-back">← Switch Role</a>
+  </nav>
+
+  <div class="dashboard-grid">
+    <section class="panel panel-left">
+      <div class="panel-header">
+        <div class="panel-icon orange-icon">🎙️</div>
+        <div>
+          <h2 class="panel-title">Voice & Text Input</h2>
+          <p class="panel-sub">Speak or type to communicate</p>
+        </div>
+      </div>
+
+      <div class="voice-controls">
+        <button id="startRecBtn" class="btn btn-orange btn-icon btn-large" onclick="startRecording()">
+          <span>🎙️</span> Start Recording
+        </button>
+        <button id="stopRecBtn" class="btn btn-outline-red btn-icon btn-large" onclick="stopRecording()" disabled>
+          <span>⏹</span> Stop Recording
+        </button>
+      </div>
+
+      <div class="voice-status-card">
+        <div class="waveform-idle" id="waveformIdle">
+          <div class="wave-icon">🎤</div>
+          <p class="wave-label">Ready to record</p>
+          <p class="wave-hint">Uses browser speech recognition — instant, no server needed</p>
+        </div>
+        <div class="waveform-active" id="waveformActive" style="display:none">
+          <div class="wave-bars">
+            <div class="wave-bar"></div><div class="wave-bar"></div>
+            <div class="wave-bar"></div><div class="wave-bar"></div>
+            <div class="wave-bar"></div><div class="wave-bar"></div>
+            <div class="wave-bar"></div><div class="wave-bar"></div>
+          </div>
+          <p class="recording-label"><span class="rec-dot-orange"></span> Listening…</p>
+          <p class="wave-hint" id="interimText" style="color:#EA580C;font-weight:500;min-height:20px;"></p>
+        </div>
+        <div class="waveform-processing" id="waveformProcessing" style="display:none">
+          <div class="spinner"></div>
+          <p class="wave-label">Finalising transcript…</p>
+        </div>
+      </div>
+
+      <div class="transcription-card">
+        <div class="trans-header">
+          <span class="trans-icon">📝</span>
+          <span class="trans-title">Transcribed Text</span>
+        </div>
+        <div class="trans-text" id="transText">—</div>
+        <button class="btn btn-green btn-sm" id="sendTransBtn" onclick="sendTranscription()" disabled>
+          Send to Chat ✉
+        </button>
+      </div>
+
+      <div class="manual-section">
+        <div class="section-divider"><span>or type manually</span></div>
+        <div class="input-row">
+          <input type="text" id="manualInput" class="text-input"
+                 placeholder="Type a message…"
+                 onkeydown="if(event.key==='Enter') sendManual()"/>
+          <button class="btn btn-green" onclick="sendManual()">Send</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel panel-right">
+      <div class="panel-header">
+        <div class="panel-icon blue-icon">💬</div>
+        <div>
+          <h2 class="panel-title">Live Chat</h2>
+          <p class="panel-sub">Shared conversation room</p>
+        </div>
+        <div class="online-dot-wrap">
+          <span class="online-dot"></span>
+          <span class="online-label" id="onlineLabel">Connecting…</span>
+        </div>
+      </div>
+      <div class="chat-window" id="chatWindow">
+        <div class="chat-empty" id="chatEmpty">
+          <div class="chat-empty-icon">💬</div>
+          <p>No messages yet</p>
+          <p class="chat-empty-hint">Start speaking or typing to begin</p>
+        </div>
+      </div>
+      <div class="chat-status-bar">
+        <span id="statusBar" class="status-text">Ready</span>
+        <span class="status-time" id="lastActivity"></span>
+      </div>
+    </section>
+  </div>
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="{{ url_for('static', filename='chat.js') }}"></script>
+  <script>
+  (() => {
+    'use strict';
+    const ROLE   = 'hearing';
+    const SENDER = 'Hearing User';
+
+    // ── Socket ────────────────────────────────────────────
+    const socket = io();
+    socket.on('connect', () => {
+      socket.emit('join', { role: SENDER });
+      document.getElementById('onlineLabel').textContent = 'Connected';
+    });
+    socket.on('disconnect', () => {
+      document.getElementById('onlineLabel').textContent = 'Disconnected';
+    });
+    socket.on('receive_message', msg => appendMessage(msg, ROLE));
+    socket.on('system_message',  msg => appendSystemMessage(msg.text));
+
+    // ── Web Speech API ────────────────────────────────────
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition   = null;
+    let finalText     = '';
+    let lastTransText = '';
+
+    if (!SpeechRecognition) {
+      document.getElementById('startRecBtn').disabled = true;
+      document.getElementById('waveformIdle').querySelector('.wave-hint').textContent =
+        'Speech recognition not supported in this browser. Use Chrome or Edge.';
+    }
+
+    function startRecording() {
+      if (!SpeechRecognition) return;
+
+      finalText = '';
+      recognition = new SpeechRecognition();
+      recognition.continuous      = true;
+      recognition.interimResults  = true;
+      recognition.lang            = 'en-US';
+
+      recognition.onstart = () => {
+        showState('active');
+        document.getElementById('startRecBtn').disabled = true;
+        document.getElementById('stopRecBtn').disabled  = false;
+        setStatus('Listening…');
+      };
+
+      recognition.onresult = (event) => {
+        let interim = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const t = event.results[i][0].transcript;
+          if (event.results[i].isFinal) finalText += t + ' ';
+          else interim = t;
+        }
+        document.getElementById('interimText').textContent = interim;
+      };
+
+      recognition.onerror = (e) => {
+        setStatus('Mic error: ' + e.error);
+        resetRecording();
+      };
+
+      recognition.onend = () => {
+        // Only fires when stopped manually or timed out
+        const text = finalText.trim();
+        if (text) {
+          lastTransText = text;
+          document.getElementById('transText').textContent      = text;
+          document.getElementById('sendTransBtn').disabled      = false;
+          setStatus('Done — ' + text.substring(0, 40) + (text.length > 40 ? '…' : ''));
+        } else {
+          setStatus('No speech detected');
+        }
+        showState('idle');
+        resetRecording();
+      };
+
+      recognition.start();
+    }
+
+    function stopRecording() {
+      if (recognition) {
+        showState('processing');
+        recognition.stop();   // triggers onend above
+      }
+    }
+
+    function resetRecording() {
+      document.getElementById('startRecBtn').disabled = false;
+      document.getElementById('stopRecBtn').disabled  = true;
+      document.getElementById('interimText').textContent = '';
+    }
+
+    function showState(state) {
+      document.getElementById('waveformIdle').style.display       = state === 'idle'       ? 'flex' : 'none';
+      document.getElementById('waveformActive').style.display     = state === 'active'     ? 'flex' : 'none';
+      document.getElementById('waveformProcessing').style.display = state === 'processing' ? 'flex' : 'none';
+    }
+
+    // ── Send ─────────────────────────────────────────────
+    function sendTranscription() {
+      if (!lastTransText) return;
+      socket.emit('send_message', { text: lastTransText, sender: SENDER, role: ROLE });
+      document.getElementById('sendTransBtn').disabled = true;
+      setStatus('Sent: ' + lastTransText.substring(0, 30));
+    }
+
+    function sendManual() {
+      const inp  = document.getElementById('manualInput');
+      const text = inp.value.trim();
+      if (!text) return;
+      socket.emit('send_message', { text, sender: SENDER, role: ROLE });
+      inp.value = '';
+    }
+
+    function setStatus(msg) {
+      document.getElementById('statusBar').textContent    = msg;
+      document.getElementById('lastActivity').textContent = new Date().toLocaleTimeString();
+    }
+
+    window.startRecording    = startRecording;
+    window.stopRecording     = stopRecording;
+    window.sendTranscription = sendTranscription;
+    window.sendManual        = sendManual;
+  })();
+  </script>
+</body>
+</html>

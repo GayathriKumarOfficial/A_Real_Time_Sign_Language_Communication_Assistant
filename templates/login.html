@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SignBridge — Real-Time Sign Language Communication Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
+</head>
+<body class="login-page">
+
+  <!-- Animated background blobs -->
+  <div class="bg-blob blob-1"></div>
+  <div class="bg-blob blob-2"></div>
+  <div class="bg-blob blob-3"></div>
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="nav-brand">
+      <div class="brand-icon">✋</div>
+      <span class="brand-name">SignBridge</span>
+    </div>
+    <div class="nav-tagline">Bridging Communication, One Sign at a Time</div>
+  </nav>
+
+  <!-- Hero -->
+  <main class="login-main">
+    <div class="hero-text">
+      <div class="hero-badge">Final Year B.Tech Project · 2026</div>
+      <h1 class="hero-title">Real-Time Sign Language<br/><span class="gradient-text">Communication Assistant</span></h1>
+      <p class="hero-sub">A two-way bridge between the Deaf community and hearing individuals — powered by AI, MediaPipe and deep learning.</p>
+    </div>
+
+    <div class="role-cards">
+      <a href="/deaf" class="role-card role-deaf">
+        <div class="role-icon-wrap deaf-icon-bg">
+          <span class="role-icon">🤟</span>
+        </div>
+        <div class="role-content">
+          <h2>Deaf User</h2>
+          <p>Use your webcam to perform signs. The AI recognises your gestures and converts them to text in real time.</p>
+          <ul class="role-features">
+            <li><span class="feat-dot green"></span>Live sign detection</li>
+            <li><span class="feat-dot green"></span>Landmark overlay</li>
+            <li><span class="feat-dot green"></span>Real-time chat sync</li>
+          </ul>
+        </div>
+        <div class="role-arrow">→</div>
+      </a>
+
+      <a href="/hearing" class="role-card role-hearing">
+        <div class="role-icon-wrap hearing-icon-bg">
+          <span class="role-icon">🎙️</span>
+        </div>
+        <div class="role-content">
+          <h2>Hearing User</h2>
+          <p>Speak or type naturally. Whisper AI transcribes your voice to text that's instantly shared in the chat.</p>
+          <ul class="role-features">
+            <li><span class="feat-dot orange"></span>Voice-to-text (Whisper)</li>
+            <li><span class="feat-dot orange"></span>Manual text input</li>
+            <li><span class="feat-dot orange"></span>Real-time chat sync</li>
+          </ul>
+        </div>
+        <div class="role-arrow">→</div>
+      </a>
+    </div>
+
+    <!-- Tech stack badges -->
+    <div class="tech-strip">
+      <span class="tech-badge">Python 3.10</span>
+      <span class="tech-badge">Flask</span>
+      <span class="tech-badge">SocketIO</span>
+      <span class="tech-badge">MediaPipe</span>
+      <span class="tech-badge">TensorFlow</span>
+      <span class="tech-badge">Web Audio API</span>
+      <span class="tech-badge">CNN + BiLSTM</span>
+    </div>
+  </main>
+
+</body>
+</html>
