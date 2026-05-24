@@ -3,7 +3,7 @@
 **B.Tech Final Year Project**  
 Real-time two-way communication between Deaf users (signing) and Hearing users (voice/text).
 
-[![Demo Video](https://img.shields.io/badge/▶%20Demo-YouTube-red?style=for-the-badge&logo=youtube)](https://youtu.be/r_marTwwN1k?si=wGpwgKb0IdkG8Vll)
+[![Demo Video](https://img.shields.io/badge/▶%20Demo-YouTube-red?style=for-the-badge&logo=youtube)](https://youtu.be/2PwIoqBvASs)
 
 ---
 
@@ -252,7 +252,7 @@ Response: { "label": "Hello", "confidence": 91.3 }
 
 ## Demo
 
-▶ Watch the project demo: [https://youtu.be/r_marTwwN1k?si=wGpwgKb0IdkG8Vll](https://youtu.be/r_marTwwN1k?si=wGpwgKb0IdkG8Vll)
+▶ Watch the project demo: [https://youtu.be/2PwIoqBvASs](https://youtu.be/2PwIoqBvASs)
 
 ---
 
